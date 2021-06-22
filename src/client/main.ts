@@ -28,6 +28,7 @@ let isConfigSynced = false;
 let rentedVehicle = null;
 let stopRent = false;
 let haveVehicle = false;
+let rental: number;
 const products = [];
 
 RegisterNuiCallbackType("config");
@@ -72,8 +73,15 @@ const spawnVehicle = data => {
   const interval = setTick(() => {
     if (HasModelLoaded(vehicleHash)) {
       const player = PlayerPedId();
-      const coords = GetEntityCoords(player, true);
-      const vehicle = CreateVehicle(vehicleHash, coords[0], coords[1], coords[2], 0, true, true);
+      const vehicle = CreateVehicle(
+        vehicleHash,
+        conf["zones"][rental]["spawn"]["x"],
+        conf["zones"][rental]["spawn"]["y"],
+        conf["zones"][rental]["spawn"]["z"],
+        conf["zones"][rental]["spawn"]["h"],
+        true,
+        true,
+      );
       TaskWarpPedIntoVehicle(player, vehicle, -1);
       SetVehicleFuelLevel(vehicle, 100.0);
       DecorSetFloat(vehicle, "_FUEL_LEVEL", GetVehicleFuelLevel(vehicle));
@@ -145,9 +153,7 @@ on("__cfx_nui:buy", data => {
                         },
                       );
                     } else {
-                      notifyText(lang["stored_vehicle"].replace("_vehicle_", lang["vehicle"]));
                       stopRent = false;
-                      haveVehicle = false;
                       clearInterval(payRent);
                     }
                   } else {
@@ -211,6 +217,9 @@ on("__cfx_nui:close", () => {
 });
 
 const configLoaded = (): void => {
+  if (conf["framework"] === "none") {
+    conf["rentForFree"] = true;
+  }
   for (let i = 0; i < conf["vehicles"].length; i++) {
     products.push({
       id: i,
@@ -240,10 +249,10 @@ const configLoaded = (): void => {
   blips = [];
   for (let i = 0; i < zones.length; i++) {
     if (zones[i].showBlip) {
-      blips[i] = AddBlipForCoord(zones[i].x, zones[i].y, zones[i].z);
+      blips[i] = AddBlipForCoord(zones[i].marker.x, zones[i].marker.y, zones[i].marker.z);
       SetBlipSprite(blips[i], blip.id);
       SetBlipDisplay(blips[i], 4);
-      SetBlipScale(blips[i], 1.0);
+      SetBlipScale(blips[i], blip.size);
       SetBlipColour(blips[i], blip.color);
       SetBlipAsShortRange(blips[i], true);
       BeginTextCommandSetBlipName("STRING");
@@ -260,17 +269,17 @@ const configLoaded = (): void => {
           coords[0],
           coords[1],
           coords[2],
-          zones[i].x,
-          zones[i].y,
-          zones[i].z,
+          zones[i].marker.x,
+          zones[i].marker.y,
+          zones[i].marker.z,
           true,
         ) < marker.distance.show
       ) {
         DrawMarker(
           marker.type,
-          zones[i].x,
-          zones[i].y,
-          zones[i].z,
+          zones[i].marker.x,
+          zones[i].marker.y,
+          zones[i].marker.z,
           marker.direction.x,
           marker.direction.y,
           marker.direction.z,
@@ -297,56 +306,115 @@ const configLoaded = (): void => {
             coords[0],
             coords[1],
             coords[2],
-            zones[i].x,
-            zones[i].y,
-            zones[i].z,
+            zones[i].marker.x,
+            zones[i].marker.y,
+            zones[i].marker.z,
             true,
           ) < marker.distance.open
         ) {
-          if (
-            IsPedInAnyVehicle(PlayerPedId(), false) &&
-            GetVehiclePedIsIn(PlayerPedId(), false) == rentedVehicle
-          ) {
-            helpText(lang["store_vehicle"].replace("_vehicle_", lang["vehicle"]));
-            if (IsControlJustPressed(0, keys.openMenu)) {
-              if (conf["payForDamage"]) {
-                const toPay = Math.floor(
-                  (1000 -
-                    GetVehicleBodyHealth(rentedVehicle) +
-                    (1000 - GetVehicleEngineHealth(rentedVehicle))) *
-                    conf["damageCost"],
-                );
-                if (conf["framework"] === "esx" || conf["framework"] === "vrp") {
-                  serverCallback(
-                    `gm_${script}:forcePayment_${conf["framework"]}`,
-                    { payment: toPay },
-                    cb => {
-                      notifyText(
-                        lang["pay_for_damage"]
-                          .replace("_price_", cb)
-                          .replace("_vehicle_", lang["vehicle"]),
-                      );
-                    },
-                  );
-                }
-              }
-              SetEntityAsMissionEntity(rentedVehicle, true, true);
-              DeleteVehicle(rentedVehicle);
-              stopRent = true;
-              haveVehicle = false;
-            }
-          } else if (!IsPedInAnyVehicle(PlayerPedId(), false)) {
+          if (!IsPedInAnyVehicle(PlayerPedId(), false)) {
             helpText(lang["press_e"].replace("_vehicle_", lang["vehicle"]));
             if (IsControlJustPressed(0, keys.openMenu)) {
               if (haveVehicle) {
                 notifyText(lang["already_rented"].replace("_vehicle_", lang["vehicle"]));
               } else {
+                rental = i;
                 SendNuiMessage(
                   JSON.stringify({
                     type: "gm_window_open",
                   }),
                 );
                 SetNuiFocus(true, true);
+              }
+            }
+          }
+        }
+      }
+    }
+    if (haveVehicle) {
+      for (let i = 0; i < zones.length; i++) {
+        if (
+          marker.type != -1 &&
+          GetDistanceBetweenCoords(
+            coords[0],
+            coords[1],
+            coords[2],
+            zones[i].spawn.x,
+            zones[i].spawn.y,
+            zones[i].spawn.z,
+            true,
+          ) < marker.distance.show
+        ) {
+          DrawMarker(
+            marker.type,
+            zones[i].spawn.x,
+            zones[i].spawn.y,
+            zones[i].spawn.z,
+            marker.direction.x,
+            marker.direction.y,
+            marker.direction.z,
+            marker.rotation.x,
+            marker.rotation.y,
+            marker.rotation.z,
+            5.0,
+            5.0,
+            1.0,
+            marker.color.r,
+            marker.color.g,
+            marker.color.b,
+            marker.alpha,
+            marker.bob,
+            marker.face,
+            2,
+            false,
+            null,
+            null,
+            false,
+          );
+          if (
+            GetDistanceBetweenCoords(
+              coords[0],
+              coords[1],
+              coords[2],
+              zones[i].spawn.x,
+              zones[i].spawn.y,
+              zones[i].spawn.z,
+              true,
+            ) < 5.0
+          ) {
+            if (
+              IsPedInAnyVehicle(PlayerPedId(), false) &&
+              GetVehiclePedIsIn(PlayerPedId(), false) == rentedVehicle
+            ) {
+              helpText(lang["store_vehicle"].replace("_vehicle_", lang["vehicle"]));
+              if (IsControlJustPressed(0, keys.openMenu)) {
+                if (conf["payForDamage"]) {
+                  const toPay = Math.floor(
+                    (1000 -
+                      GetVehicleBodyHealth(rentedVehicle) +
+                      (1000 - GetVehicleEngineHealth(rentedVehicle))) *
+                      conf["damageCost"],
+                  );
+                  if (conf["framework"] === "esx" || conf["framework"] === "vrp") {
+                    serverCallback(
+                      `gm_${script}:forcePayment_${conf["framework"]}`,
+                      { payment: toPay },
+                      cb => {
+                        notifyText(
+                          lang["pay_for_damage"]
+                            .replace("_price_", cb)
+                            .replace("_vehicle_", lang["vehicle"]),
+                        );
+                      },
+                    );
+                  }
+                }
+                SetEntityAsMissionEntity(rentedVehicle, true, true);
+                DeleteVehicle(rentedVehicle);
+                stopRent = true;
+                haveVehicle = false;
+                notifyText(lang["stored_vehicle"].replace("_vehicle_", lang["vehicle"]));
+                SetPedCoordsKeepVehicle(PlayerPedId(), zones[i].marker.x, zones[i].marker.y, zones[i].marker.z)
               }
             }
           }
